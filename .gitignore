@@ -1,0 +1,6 @@
+# Exclure des fichiers spécifiques
+LLM-Mastery-hand/wiki.txt
+LLM-Mastery-hand/encoded_data.pt
+
+# Exclure tout le dossier models
+LLM-Mastery-hand/models/
