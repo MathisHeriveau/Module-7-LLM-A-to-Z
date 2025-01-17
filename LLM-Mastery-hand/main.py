@@ -22,6 +22,7 @@ torch.backends.cudnn.allow_tf32 = True
 torch.cuda.empty_cache()
 import torch._dynamo
 torch._dynamo.config.suppress_errors = True
+torch.autograd.set_detect_anomaly(True)
 
 
 # files_url = "https://ideami.com/llm_train"
@@ -40,7 +41,7 @@ path = "LLM-Mastery-hand"
 # *********************** #
 #      ARCHITECTURE       #
 # *********************** #
-batch_size = 8         # 8 -> 128 Nombre de process en parallele
+batch_size = 128         # 8 -> 128 Nombre de process en parallele
 context = 512           # L'ia va prendre attention a 512 token, voir les connections entre : 1 = Incohérant, 100_000 excellent mais trop long à entrainer
 embed_size = 384        # Each token is transformed into a vector of 384 nb (Embedding)
 
@@ -74,14 +75,14 @@ eval_interval = 50      # Savoir s'il fait un over-fit
 eval_iters = 10         # Quand on fait l'évaluation du loss du batch (average of 10 batch)
 compile = True          # A verifier si on le mets pas en Flse
 checkpoint_dir = path+'/models'
-checkpoint_fn='finalModel.pt'
-checkpoint_load_fn='finalModel.pt'
+checkpoint_fn='lastets.pt'
+checkpoint_load_fn='lastets.pt'
 dtype = torch.bfloat16
 
 # *********************** #
 #           MODE          #
 # *********************** #
-inference = True       # Inference : Donne un new input au NN pour produire un new tokens qui suit l'input 
+inference = False       # Inference : Donne un new input au NN pour produire un new tokens qui suit l'input 
 load_pretrained = False
 
 # *********************** #
@@ -128,6 +129,8 @@ encode = lambda s: sp.Encode(s)
     
 # TOKEN - > TEXT
 decode = lambda l: sp.Decode(l)
+
+
 
 if os.path.exists(f"{path}/encoded_data.pt"):
     print(f"Load encode data from {path}/encoded_data.pt")
@@ -240,8 +243,8 @@ class Block(nn.Module):
         self.ln2 =          nn.LayerNorm(embed_size)
     
     def forward(self, x):
-        x += self.ma(self.ln1(x))           # Input normaliser par le multihead attention
-        x += self.feed_forward(self.ln2(x)) # Et passage a la normalisation du computation layer
+        x = x + self.ma(self.ln1(x))           # Input normaliser par le multihead attention
+        x = x + self.feed_forward(self.ln2(x))
         return x
 
 
