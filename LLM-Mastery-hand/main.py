@@ -20,6 +20,9 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
 torch.cuda.empty_cache()
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
 
 # files_url = "https://ideami.com/llm_train"
 # print('Downloading files Python')
@@ -37,7 +40,7 @@ path = "LLM-Mastery-hand"
 # *********************** #
 #      ARCHITECTURE       #
 # *********************** #
-batch_size = 64         # 8 -> 128 Nombre de process en parallele
+batch_size = 8         # 8 -> 128 Nombre de process en parallele
 context = 512           # L'ia va prendre attention a 512 token, voir les connections entre : 1 = Incohérant, 100_000 excellent mais trop long à entrainer
 embed_size = 384        # Each token is transformed into a vector of 384 nb (Embedding)
 
@@ -70,18 +73,16 @@ train_iters = 100_000
 eval_interval = 50      # Savoir s'il fait un over-fit
 eval_iters = 10         # Quand on fait l'évaluation du loss du batch (average of 10 batch)
 compile = True          # A verifier si on le mets pas en Flse
-checkpoint_dir ='models'
-checkpoint_fn='lastest.pt'
-checkpoint_load_fn='lastest.pt'
+checkpoint_dir = path+'/models'
+checkpoint_fn='finalModel.pt'
+checkpoint_load_fn='finalModel.pt'
 dtype = torch.bfloat16
-
 
 # *********************** #
 #           MODE          #
 # *********************** #
-inference = False       # Inference : Donne un new input au NN pour produire un new tokens qui suit l'input 
-
-
+inference = True       # Inference : Donne un new input au NN pour produire un new tokens qui suit l'input 
+load_pretrained = False
 
 # *********************** #
 #         DEVICE          #
@@ -95,8 +96,8 @@ print(f'You will using {device}')
 #                       LOGGING                          #
 # ****************************************************** #
 wandb_log = True
-wandb_project = "llm_test"
-wandb_run_name = "llm1_"+datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+wandb_project = "llm1"
+wandb_run_name = "llm1-"+datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
 
 if wandb_log:
     import wandb
@@ -120,13 +121,11 @@ print(f"Tokenizer vocab_size : {vocab_size}")
     
 # ****************************************************** #
 #                       ENCODE                           #
+#                       DECODE                           #
 # ****************************************************** #
 # TEXT - > TOKEN
 encode = lambda s: sp.Encode(s)
     
-# ****************************************************** #
-#                       DECODE                           #
-# ****************************************************** #
 # TOKEN - > TEXT
 decode = lambda l: sp.Decode(l)
 
@@ -144,13 +143,20 @@ val_data=data[spl:]     # Test sur 10% des données
 
 print(f"Total data: {data_size/1e6:.2f} Million | Training: {len(train_data)/1e6:.2f} Million | Validation: {len(val_data)/1e6:.2f} Milion")
 
+@torch.no_grad()
+def generate_sample(input):
+    t1 = torch.tensor(encode(input), dtype=torch.long, device=device)
+    t1 = t1[None, :]
+    newgen = model.generate(t1, max=64)[0].tolist()
+    result = decode(newgen)
+    print(f"result : {result}")
 
 # ****************************************************** #
 #                       BATCH                            #
 # ****************************************************** #
 def get_batch(split):   # En gros, ca prend une phrase au hasard : x = "Virginia. She was named Maria, but people" y = ". She was named Maria, but people called"
     # BS = Batch size 8 / SL = Sequence or Context Lenght : 512
-    data = train_data if split=="train" else val_data
+    data = train_data if split=='train' else val_data
     inds = torch.randint(len(data)-context, (batch_size,))
     x = torch.stack([data[i: i+context] for i in inds])         # (8,215)
     y = torch.stack([data[i+1: i+context+1] for i in inds])     # (8,215)
@@ -302,7 +308,153 @@ class Head(nn.Module):
         x = attn_w @ v # BS, SL, 54
         return x
         
+        
+
+# ****************************************************** #
+#                      TRAINING                          #
+# ****************************************************** #
     
+model = GPT()    
+model = model.to(dtype)    
+model = model.to(device)  
+
+if compile:
+    print("Torch :: Compiling model")
+    model = torch.compile(model)
+
+print(sum(p.numel() for p in model.parameters()) / 1e6, "Million parameters")
+
+@torch.no_grad()
+def calculate_loss():
+    out={}
+    model.eval()
+    for split in ["train", "eval"]:
+        l=torch.zeros(eval_iters)
+        for i in range(eval_iters):
+            x, y = get_batch(split)
+            logits, loss = model(x,y)
+            l[i] = loss 
+        out[split]=l.mean().item()
+    model.train()
+    return out
+
+    
+
+
+# ****************************************************** #
+#                      OPTIMIZER                         #
+# ****************************************************** #
+
+p_dict = {p_name: p for p_name, p in model.named_parameters() if p.requires_grad}
+
+weight_decay_p = [p for n, p in p_dict.items() if (p >= 2).all()]
+no_weight_decay_p = [p for n, p in p_dict.items() if (p < 2).any()]
+
+
+optimizer_groups = [
+    {
+        "params": weight_decay_p,
+        "weight_decay": weight_decay
+    },
+    {
+        'params':no_weight_decay_p, 
+        "weight_decay": 0.0
+    }
+]
+
+optimizer = torch.optim.AdamW(optimizer_groups, lr=lr, betas=(0.9, 0.99))
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, train_iters, eta_min=lr/10)
+start_iterations = 0
+best_val_loss = float('inf') # track the validation loss value
+
+
+
+# ****************************************************** #
+#                  TRAINING LOOP                         #
+# ****************************************************** #
+try: 
+    for i in tqdm(range(start_iterations, train_iters)):
+        xb, yb = get_batch("train")
+        logits, loss = model(xb, yb)
+        
+        #Evaluating loss
+        if (i % eval_interval == 0 or i == train_iters-1):
+            l = calculate_loss()
+            print(f"\n{i}: train loss: {l['train']} / val loss: {l['eval']}")
+            generate_sample("Once upon a time")
+            
+            if l['eval'] < best_val_loss:
+                best_val_loss = l['eval']
+                print("Checkpoint: Saving with the loss: ", best_val_loss)
+                torch.save({
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': best_val_loss,
+                    'iteration': i
+                }, checkpoint_dir +"/" + checkpoint_fn)
+                
+            if wandb_log:
+                wandb.log({
+                    "loss/train": l['train'],
+                    "loss/val": l['eval'],
+                    "lr": scheduler.get_last_lr()[0]
+                    
+                }, step = i)
+        
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        
+        nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
+        
+        optimizer.step() # weight step
+        scheduler.step() # LR change 
+
+    if wandb_log:
+        wandb.finish()
+
+except KeyboardInterrupt:
+    print("Training interrupted. Cleaning up... ")
+    
+finally:
+    torch.cuda.empty_cache()
+    print("GPU memory released")
+    sys.exit(0)
+    
+    
+
+# ****************************************************** #
+#                      LOADER                            #
+# ****************************************************** #
+
+def load_chekpoint(path):
+    print(f"LLM - Loading model to {path}")
+    checkpoint = torch.load(path)
+    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    iteration = checkpoint['iteration']
+    loss = checkpoint['loss']
+    print(f'Loaded iter {iteration} with the loss {loss}')
+    return iteration, loss 
+
+if os.path.exists(f"{checkpoint_dir}/{checkpoint_load_fn}") and load_pretrained:
+    start_iterations, loss = load_chekpoint(checkpoint_dir+"/"+ checkpoint_load_fn)
+    best_val_loss = loss
+
+# ****************************************************** #
+#                      INFERENCE                         #
+# ****************************************************** #
+if inference == True:
+    model.eval()
+    while True:
+        qs = input("Enter text (q to quit): ")
+        if qs == "":
+            continue
+        if qs == "q":
+            break
+        generate_sample(qs)
+        
+
+
 
 # ****************************************************** #
 #                      MAIN                              #
@@ -318,16 +470,7 @@ def main():
     print(loss.item())
 
 
-    @torch.no_grad()
-    def generate_sample(input):
-        t1 = torch.tensor(encode(input), dtype=torch.long, device=device)
-        t1 = t1[None, :]
-        newgen = model.generate(t1, max=64)[0].tolist()
-        result = decode(newgen)
-        print(f"result : {result}")
+    
 
     text10 = "je veux une phrase bien longue plus grande que 500 caractere, mais pas non plus trop ongue parce que ca va etre long decrire 500 careactere comme ca, tu penses pas ? moi je pense en tout cas, les dissertation c'est pas mon fort. Je vais parler de mr bean, c'est mieux ! Quel acteur Jonhy English ! En plus il a une voiture de malade a des milion, qu'il a lui meme casser, ptdr la honte"
     generate_sample(text10)
-
-
-main()

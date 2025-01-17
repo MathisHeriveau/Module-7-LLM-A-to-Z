@@ -7,3 +7,4 @@ LLM-Mastery-hand/models/
 
 wandb/
 bitsandbytes-0.44.1.dev0-py3-none-macosx_13_1_arm64.whl
+triton/
