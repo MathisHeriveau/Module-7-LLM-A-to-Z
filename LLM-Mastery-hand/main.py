@@ -41,7 +41,7 @@ path = "LLM-Mastery-hand"
 # *********************** #
 #      ARCHITECTURE       #
 # *********************** #
-batch_size = 128         # 8 -> 128 Nombre de process en parallele
+batch_size = 16         # 8 -> 128 Nombre de process en parallele
 context = 512           # L'ia va prendre attention a 512 token, voir les connections entre : 1 = Incohérant, 100_000 excellent mais trop long à entrainer
 embed_size = 384        # Each token is transformed into a vector of 384 nb (Embedding)
 
@@ -83,7 +83,7 @@ dtype = torch.bfloat16
 #           MODE          #
 # *********************** #
 inference = False       # Inference : Donne un new input au NN pour produire un new tokens qui suit l'input 
-load_pretrained = False
+load_pretrained = True
 
 # *********************** #
 #         DEVICE          #
@@ -370,7 +370,23 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, train_iters, e
 start_iterations = 0
 best_val_loss = float('inf') # track the validation loss value
 
+# ****************************************************** #
+#                      LOADER                            #
+# ****************************************************** #
 
+def load_chekpoint(path):
+    print(f"LLM - Loading model to {path}")
+    checkpoint = torch.load(path)
+    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    iteration = checkpoint['iteration']
+    loss = checkpoint['loss']
+    print(f'Loaded iter {iteration} with the loss {loss}')
+    return iteration, loss 
+
+if os.path.exists(f"{checkpoint_dir}/{checkpoint_load_fn}") and load_pretrained:
+    start_iterations, loss = load_chekpoint(checkpoint_dir+"/"+ checkpoint_load_fn)
+    best_val_loss = loss
 
 # ****************************************************** #
 #                  TRAINING LOOP                         #
@@ -424,24 +440,6 @@ finally:
     sys.exit(0)
     
     
-
-# ****************************************************** #
-#                      LOADER                            #
-# ****************************************************** #
-
-def load_chekpoint(path):
-    print(f"LLM - Loading model to {path}")
-    checkpoint = torch.load(path)
-    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    iteration = checkpoint['iteration']
-    loss = checkpoint['loss']
-    print(f'Loaded iter {iteration} with the loss {loss}')
-    return iteration, loss 
-
-if os.path.exists(f"{checkpoint_dir}/{checkpoint_load_fn}") and load_pretrained:
-    start_iterations, loss = load_chekpoint(checkpoint_dir+"/"+ checkpoint_load_fn)
-    best_val_loss = loss
 
 # ****************************************************** #
 #                      INFERENCE                         #
