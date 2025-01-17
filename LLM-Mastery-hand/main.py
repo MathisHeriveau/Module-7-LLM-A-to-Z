@@ -131,7 +131,7 @@ encode = lambda s: sp.Encode(s)
 decode = lambda l: sp.Decode(l)
 
 
-
+# Modifier a 2 si on veut faire notre propre encoded_data
 if os.path.exists(f"{path}/encoded_data.pt"):
     print(f"Load encode data from {path}/encoded_data.pt")
     data = torch.load(f"{path}/encoded_data.pt")
