@@ -1,0 +1,83 @@
+{
+  "builder_name": "parquet",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "orpo-dpo-mix-40k",
+  "dataset_size": 238639013,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/mlabonne/orpo-dpo-mix-40k@0f72511202b8f093e9be60e1683d84b046062e36/data/train-00000-of-00001.parquet": {
+      "num_bytes": 126503374,
+      "checksum": null
+    }
+  },
+  "download_size": 126503374,
+  "features": {
+    "input_ids": {
+      "feature": {
+        "dtype": "int32",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "token_type_ids": {
+      "feature": {
+        "dtype": "int8",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "attention_mask": {
+      "feature": {
+        "dtype": "int8",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "positive_input_ids": {
+      "feature": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "positive_attention_mask": {
+      "feature": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "negative_input_ids": {
+      "feature": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "negative_attention_mask": {
+      "feature": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 365142387,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 238639013,
+      "num_examples": 44245,
+      "dataset_name": "orpo-dpo-mix-40k"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
