@@ -6,7 +6,9 @@ LLM-Mastery-hand/encoded_data.pt
 LLM-Mastery-hand/models/
 
 # Exlure les data
-llm_align\data2
+llm_align/data2/
+llm_align/models/
+llm_align/tokenizers/
 
 wandb/
 bitsandbytes-0.44.1.dev0-py3-none-macosx_13_1_arm64.whl
