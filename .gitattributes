@@ -1,2 +1,7 @@
-*.arrow filter=lfs diff=lfs merge=lfs -text
-*.pt filter=lfs diff=lfs merge=lfs -text
+# git lfs install
+
+*.arrow filter=lfs diff=lfs merge=lfs -text # git lfs track "*.arrow"
+*.pt filter=lfs diff=lfs merge=lfs -text # git lfs track "*.pt"
+
+# git lfs migrate import --include="*.arrow,*.pt" : Importer les fichiers suivis par git lfs
+# git lfs ls-files : Vérifier les fichiers suivis par git lfs
