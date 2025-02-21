@@ -1,0 +1,55 @@
+{
+  "builder_name": "json",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "general-knowledge",
+  "dataset_size": 14236626,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/MuskumPillerum/General-Knowledge@9050a1b61f75977ba5753553b1f8181a0ac5b9a3/output.json": {
+      "num_bytes": 16218805,
+      "checksum": null
+    }
+  },
+  "download_size": 16218805,
+  "features": {
+    "input_ids": {
+      "feature": {
+        "dtype": "int32",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "attention_mask": {
+      "feature": {
+        "dtype": "int8",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "labels": {
+      "feature": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 30455431,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 14236626,
+      "num_examples": 37635,
+      "dataset_name": "general-knowledge"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
