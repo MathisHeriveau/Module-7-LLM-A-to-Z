@@ -448,112 +448,137 @@ class Llama(nn.Module):
 ############ RUNNING LLM.PY IN INFERENCE MODE########
 #####################################################
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='llm')
-    parser.add_argument('-align',action='store_true',help='Enable alignment')
-    parser.add_argument('-num',type=int, default=1, help='Number of answers')
-    parser.add_argument('-temp',type=float, default=0.5, help='Temperature value')
-    parser.add_argument('-topk',type=int, default=50, help='Topk value')
+    # Argument Parser
+    parser = argparse.ArgumentParser(description="LLM Training & Inference")
+    parser.add_argument('-align', action='store_true', help='Enable alignment')
+    parser.add_argument('-num', type=int, default=1, help='Number of answers')
+    parser.add_argument('-temp', type=float, default=0.5, help='Temperature value')
+    parser.add_argument('-topk', type=int, default=50, help='Top-k sampling value')
 
-    args=parser.parse_args()
-    use_orpo = args.align  # use aligned checkpoint or not
+    args = parser.parse_args()
+    use_orpo = args.align  
     num_answers = args.num
     temp = args.temp
-    topk=args.topk
+    topk = args.topk
+    training = True  # Mode entraînement
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     tokenizer_path = "tokenizers/tok16384"
     model_path = "./models/"
-    
-    if use_orpo==True:
-        model_inf, context= "aligned_model.pt", 1024  # ORPO is trained with context of 1024
-        print("Mode::Using Orpo aligned model")
+
+    # Choix du modèle en fonction d'ORPO
+    if use_orpo:
+        model_inf, context = "aligned_model.pt", 1024  
+        print("Mode :: Using ORPO aligned model")
     else:
-        model_inf, context= "base_model.pt", 512  # The original was trained with context of 512
-        print("Mode::Using pretrained model without alignment")
+        model_inf, context = "base_model.pt", 512  
+        print("Mode :: Using pretrained model without alignment")
 
     print(f"Using model {model_inf}")
-   
-    # Load model and extract config
-    checkpoint = torch.load(os.path.join(model_path, model_inf), map_location=device, weights_only=False)
-    config = checkpoint.pop("config")
-    
-    # temporary fix if the model was trained and saved with torch.compile
-    # The _orig_mod. prefix in your model's state dictionary keys is related to
-    # how PyTorch handles compiled models, specifically when using the torch.compile function
-    # When torch.compile is used, PyTorch might wrap the original model in a way that modifies
-    # the names of its parameters and buffers. This wrapping can prepend a prefix like _orig_mod.
-    # We remove those wrappings to make the checkpoint compatible with the non compiled version of the model
-    new_dict = dict()
-    for k in checkpoint.keys():
-        if k.startswith("_orig_mod."):
-            #print("Removing _orig_mod wrapping")
-            new_dict[k.replace("_orig_mod.", "")] = checkpoint[k]
-        else:
-            new_dict[k] = checkpoint[k]
 
-    # Setup tokenizer
+    # Chargement du modèle
+    checkpoint_path = os.path.join(model_path, model_inf)
+    
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found!")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    if "config" not in checkpoint:
+        raise KeyError("Checkpoint does not contain 'config'")
+
+    config = checkpoint.pop("config")
+
+    # Correction des noms des poids (torch.compile fix)
+    new_dict = {}
+    for k, v in checkpoint.items():
+        new_key = k.replace("_orig_mod.", "") if k.startswith("_orig_mod.") else k
+        new_dict[new_key] = v
+
+    # Setup du tokenizer
     tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_path)
     tokenizer.pad_token = tokenizer.eos_token
 
+    # Configuration du modèle
     model_args = ModelArgs(
-        dim=config.hidden_size, 
-        n_layers=config.num_hidden_layers, 
-        n_heads=config.num_attention_heads, 
-        n_kv_heads=config.num_key_value_heads, 
-        vocab_size=config.vocab_size, 
-        norm_eps=config.rms_norm_eps, 
+        dim=config.hidden_size,
+        n_layers=config.num_hidden_layers,
+        n_heads=config.num_attention_heads,
+        n_kv_heads=config.num_key_value_heads,
+        vocab_size=config.vocab_size,
+        norm_eps=config.rms_norm_eps,
         rope_theta=config.rope_theta,
-        max_seq_len=context, 
-        dropout=config.attention_dropout, 
+        max_seq_len=context,
+        dropout=config.attention_dropout,
         hidden_dim=config.intermediate_size,
         attention_bias=config.attention_bias,
         mlp_bias=config.mlp_bias
     )
 
-    # Instantiate model, load parms, move to device
+    # Initialisation du modèle
     model = Llama(model_args)
-    model.load_state_dict(new_dict)
+    model.load_state_dict(new_dict, strict=False)  # `strict=False` pour éviter les erreurs de compatibilité
+
+    model.to(device)
     if device.type == 'cuda':
-        model = model.to(torch.bfloat16)
-        model = model.to(device)
+        model.to(torch.bfloat16)  # Après `.to(device)`
+
+    if training:
+        print("Model loaded in training mode")
+
+        optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=0.1)
+        loss_fn = torch.nn.CrossEntropyLoss()
+
+        # Training loop
+        for i in range(1000):
+            print(f"Training iteration {i+1}")
+
+            x = torch.randint(0, config.vocab_size, (2, context), device=device)
+            y = torch.randint(0, config.vocab_size, (2, context), device=device)
+            
+            print(f"Input shape: {x.shape}")
+            print(x)
+            print(f"Target shape: {y.shape}")
+            print(y)
+
+            optimizer.zero_grad()
+            logits, loss = model(x, y)
+            
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+
+            print(f"Loss: {loss.item():.4f}")
+
+
     model.eval()
 
-    model_size = sum(t.numel() for t in model.parameters())
-    print(f"Model size: {model_size/1e6:.2f} M parameters")
+    model_size = sum(p.numel() for p in model.parameters())
+    print(f"Model size: {model_size/1e6:.2f}M parameters")
 
     # Interactive loop
     while True:
-         qs = input("Enter text (q to quit) >>> ")
-         if qs == "":
-             continue
-         if qs == 'q':
-             break
-  
-         # we activate chat template only for ORPO model because it was trained with it
-         if use_orpo:
+        qs = input("Enter text (q to quit) >>> ")
+        if qs == "":
+            continue
+        if qs.lower() == 'q':
+            break
+
+        if use_orpo:
             qs = f"<s> <|user|>\n{qs}</s>\n<s> <|assistant|> "
 
-         x = tokenizer.encode(qs)
-         x = torch.tensor(x, dtype=torch.long, device=device)[None, ...]
+        x = tokenizer.encode(qs, return_tensors="pt").to(device)
 
-         for ans in range(num_answers):
+        for ans in range(num_answers):
             with torch.no_grad():
-                y = model.generate(
-                    x, 
-                    max_new_tokens=256, 
-                    temperature=temp, 
-                    top_k=topk
-                )
+                y = model.generate(x, max_new_tokens=256, temperature=temp, top_k=topk)
 
-            response = tokenizer.decode(y[0].tolist(), skip_special_tokens=True)   
-
+            response = tokenizer.decode(y[0].tolist(), skip_special_tokens=True)
             output = model.clean_response(response)
 
             print("################## \n")
             print(f"### Answer {ans+1}: {output}")
-
-        
 

@@ -1,0 +1,12 @@
+[
+    {
+        "instruction": "Explique la théorie de la relativité",
+        "input": "",
+        "output": "La théorie de la relativité d'Einstein se compose de la relativité restreinte et générale..."
+    },
+    {
+        "instruction": "Traduis en anglais : Bonjour, comment vas-tu ?",
+        "input": "",
+        "output": "Hello, how are you?"
+    }
+]
